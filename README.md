@@ -1,2 +1,2 @@
-# polars_tfidf
+# FastTFIDF
 Fast tfidf.
