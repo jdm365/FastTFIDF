@@ -1,9 +1,0 @@
-setup.py
-fast_tfidf/engine.cpp
-fast_tfidf/engine.h
-fast_tfidf/fast_tfidf.cpp
-fast_tfidf.egg-info/PKG-INFO
-fast_tfidf.egg-info/SOURCES.txt
-fast_tfidf.egg-info/dependency_links.txt
-fast_tfidf.egg-info/top_level.txt
-tests/test.py

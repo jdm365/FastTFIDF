@@ -3,6 +3,7 @@
 
 cimport cython
 from cython.view cimport array as cvarray
+from cython.parallel import prange
 
 from libc.stdint cimport uint32_t, uint64_t
 from libcpp.vector cimport vector
@@ -20,8 +21,8 @@ import os
 cdef extern from "engine.h":
     cdef struct CSRData:
         vector[float] values
-        vector[uint32_t]   idxs
-        vector[uint32_t]   ptrs
+        vector[uint32_t] idxs
+        vector[uint32_t] ptrs
 
     cdef cppclass _TFIDF:
         _TFIDF(int min_df, float max_df) nogil
@@ -35,7 +36,7 @@ cdef class FastTFIDF:
     cdef float   max_df
 
 
-    def __init__(self, int   min_df = 1, float max_df = 1.0):
+    def __init__(self, int min_df = 1, float max_df = 1.0):
         self.min_df = min_df
         self.max_df = max_df
 
@@ -47,17 +48,14 @@ cdef class FastTFIDF:
                 )
         cdef vector[string] docs
         docs.reserve(len(documents))
-        cdef str doc
         for doc in documents:
-            docs.push_back(doc.upper().encode("utf-8"))
+            docs.push_back(doc.encode("utf-8"))
 
         print(f"init: {perf_counter() - init:.2f}")
 
         init = perf_counter()
         cdef CSRData data = self.tfidf.fit_transform(docs)
         print(f"fit_transform: {perf_counter() - init:.2f}")
-
-        init = perf_counter()
 
         cdef float[:] values_view = <float[:data.values.size()]>&data.values[0]
         cdef cnp.ndarray[cnp.float32_t, ndim=1] values = np.asarray(values_view, dtype=np.float32)
@@ -70,7 +68,6 @@ cdef class FastTFIDF:
 
         X = csr_matrix((values, idxs, ptrs), dtype=np.float32)
 
-        print(f"np.array: {perf_counter() - init:.2f}")
         return X
 
 

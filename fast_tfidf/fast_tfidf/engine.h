@@ -12,13 +12,13 @@ struct CSRData {
 
 struct _TFIDF {
 	robin_hood::unordered_map<std::string, uint32_t> vocabulary;
-	robin_hood::unordered_map<uint32_t, uint32_t> doc_frequency;
+	std::vector<uint32_t> doc_frequency;
 	int min_df;
 	float max_df;
 
 	_TFIDF(
 			int min_df=1,
-			float max_df=1
+			float max_df=1.0f
 			) : min_df(min_df), max_df(max_df) {}
 
 	std::vector<std::string> tokenize(const std::string& text);
@@ -26,6 +26,8 @@ struct _TFIDF {
 		const std::vector<std::string>& documents
 	);
 	CSRData transform(
-		const std::vector<std::string>& documents
+		const std::vector<std::string>& documents,
+		bool is_first = false
 	);
+	CSRData transform_map_reduce(const std::vector<std::string>& documents);
 };
