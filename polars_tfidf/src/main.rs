@@ -26,18 +26,18 @@ struct TfidfVectorizer {
 }
 
 
-fn fit_tfidf(lf: &LazyFrame, text_column: &str) -> Result<TfidfVectorizer, PolarsError> {
+fn fit_tfidf(text_series: &Column) -> Result<TfidfVectorizer, PolarsError> {
     let mut vectorizer = TfidfVectorizer {
         vocab: HashMap::new(),
         dfs: Vec::new(),
         tokens: Vec::new(),
     };
 
-    let count = lf.clone().select([col(text_column).count()]).collect()?.height();
-    vectorizer.dfs.reserve(count as usize);
+    let count = text_series.len();
+    vectorizer.dfs.reserve(count);
 
     let mut doc_tokens: Vec<TFToken> = Vec::new();
-    lf.clone().select([col(text_column)]).collect()?.column(text_column)?.str()?.into_iter().for_each(|v: Option<&str>| {
+    text_series.str()?.into_iter().for_each(|v: Option<&str>| {
         let _v = match v {
             Some(v) => v,
             None => return,
@@ -81,7 +81,7 @@ fn main() -> Result<(), PolarsError> {
     let titles = lf.clone().select([col("title")]).collect()?;
 
     let start_time = std::time::Instant::now();
-    _ = fit_tfidf(&lf, "title");
+    _ = fit_tfidf(lf.clone().select([col("title")]).collect()?.column("title")?);
     println!("Time: {:?}", start_time.elapsed());
     println!("KDocs per second: {:?}", 0.001 * titles.height() as f32 / start_time.elapsed().as_secs_f32());
 
