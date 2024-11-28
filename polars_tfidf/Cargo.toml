@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 polars = { version = "0.44.2", features = ["lazy", "parquet"] }
+rayon = "1.10.0"
 sprs = "0.11.2"
