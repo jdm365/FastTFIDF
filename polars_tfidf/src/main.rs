@@ -95,6 +95,11 @@ fn fit_tfidf(text_series: &Column) -> Result<TfidfVectorizer, PolarsError> {
     // TODO: Calc indptrs through as cumsum of dfs
     // data: tfidfs
     // indices: term_ids
+    let mut csr_matrix: CSRMatrix<f32> = CSRMatrix {
+        values: Vec::new(),
+        col_idxs: Vec::new(),
+        row_start_pos: Vec::new(),
+    };
 
     let mut idx: usize = 0;
     let mut doc_tokens: Vec<TFToken> = Vec::new();
