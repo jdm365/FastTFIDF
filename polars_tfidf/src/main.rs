@@ -94,7 +94,7 @@ fn process_doc_whitespace(
     for char in text.as_bytes().iter() {
         match char {
             b' ' | b'\t' | b'\n' | b'\r' => {
-                let str_ref = unsafe { std::str::from_utf8_unchecked(&token_buffer[0..buffer_idx]) };
+                let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
 
                 if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
                     match doc_tokens.iter_mut().find(|x| x.term_id == term_id) {
@@ -136,11 +136,13 @@ fn process_doc_whitespace(
 }
 
 
-fn fit_tfidf(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsError> {
+fn fit_transform(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsError> {
+    let start_time = std::time::Instant::now();
+
     let count = text_series.len();
 
     let mut vectorizer: TfidfVectorizer<f32> = TfidfVectorizer {
-        vocab: FxHashMap::with_capacity_and_hasher(count / 10, Default::default()),
+        vocab: FxHashMap::with_capacity_and_hasher(count / 6, Default::default()),
         dfs: Vec::new(),
         csr_mat: CSRMatrix {
             values: Vec::new(),
@@ -155,7 +157,6 @@ fn fit_tfidf(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsError> 
 
     let mut idx: usize = 0;
     let mut doc_tokens: Vec<TFToken> = Vec::new();
-    // let mut doc_tokens_hashmap: FxHashMap<u32, u32> = FxHashMap::default();
     let mut doc_tokens_hashmap: FxHashMap<u32, u32> = FxHashMap::with_capacity_and_hasher(256, Default::default());
 
     text_series.str()?.into_iter().for_each(|v: Option<&str>| {
@@ -186,31 +187,28 @@ fn fit_tfidf(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsError> 
     // Add the last row. Necessary for csr indptr format.
     vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
 
-    let start_time = std::time::Instant::now();
     for (idx, v) in vectorizer.csr_mat.values.iter_mut().enumerate() {
         let df = vectorizer.dfs[vectorizer.csr_mat.col_idxs[idx] as usize];
         let idf = (count as f32/ (1 + df) as f32).ln();
         *v *= idf;
     };
-    let end_time = start_time.elapsed();
-    println!("SPRS construction time: {:?}", end_time);
+
+    let elapsed = start_time.elapsed();
+    println!("Time: {:?}", elapsed);
+    println!("KDocs per second: {:?}", 0.001 * count as f32 / elapsed.as_secs_f32());
     Ok(vectorizer)
 }
 
 fn main() -> Result<(), PolarsError> {
     const FILENAME: &str = "mb.parquet";
+    const N_ROWS: u32 = std::u32::MAX;
 
-    let lf = LazyFrame::scan_parquet(FILENAME, Default::default())?;
-
-    let column = "artist";
-    let count = lf.clone().select([col(column)]).collect()?.height();
-
-    let start_time = std::time::Instant::now();
-    _ = fit_tfidf(lf.clone().select([col(column)]).collect()?.column(column)?);
-    println!("Time: {:?}", start_time.elapsed());
-    println!("KDocs per second: {:?}", 0.001 * count as f32 / start_time.elapsed().as_secs_f32());
-
+    let lf = LazyFrame::scan_parquet(FILENAME, Default::default())?.limit(N_ROWS);
     // println!("{:?}", lf.clone().collect());
     // println!("{:?}", lf.clone().collect_schema()?);
+
+    let column = "title";
+    _ = fit_transform(lf.clone().select([col(column)]).collect()?.column(column)?);
+
     Ok(())
 }

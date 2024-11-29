@@ -6,7 +6,7 @@ from time import perf_counter
 
 def sklearn_bench():
     df = pl.read_parquet('mb.parquet')
-    column = "artist"
+    column = "title"
 
     series = df.select(column).fill_null("").to_series()
 
@@ -15,7 +15,7 @@ def sklearn_bench():
     init = perf_counter()
     vectorizer.fit_transform(series)
     fit_time = perf_counter() - init
-    print(f"fit time: {fit_time}")
+    print(f"fit transform time: {fit_time}")
     print(f"KDocs per second: {len(series) * 0.001 / fit_time}")
 
 
