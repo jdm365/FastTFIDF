@@ -98,6 +98,7 @@ fn process_doc_whitespace_hashmap(
 ) -> Result<(), TokenizationError> {
 
     let mut buffer_idx: usize = 0;
+    let mut n_gram_buffer: [u32; 8] = [0; 8];
 
     doc_tokens_hashmap.clear();
     for char in text.as_bytes().iter() {
@@ -219,7 +220,18 @@ fn fit_transform(
     assert!(count > 0);
 
     let mut vectorizer: TfidfVectorizer<f32> = TfidfVectorizer {
-        vocab: FxHashMap::with_capacity_and_hasher(count / 6, Default::default()),
+        vocab: Vocab {
+            vocab: FxHashMap::with_capacity_and_hasher(count / 6, Default::default()),
+            higher_grams: [
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 1) as usize, Default::default()),
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 2) as usize, Default::default()),
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 3) as usize, Default::default()),
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 4) as usize, Default::default()),
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 5) as usize, Default::default()),
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 6) as usize, Default::default()),
+                FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 7) as usize, Default::default()),
+            ],
+        },
         dfs: Vec::new(),
         csr_mat: CSRMatrix {
             values: Vec::new(),
