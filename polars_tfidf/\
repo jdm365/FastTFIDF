@@ -2,19 +2,6 @@ use rustc_hash::FxHashMap;
 use polars::prelude::*;
 
 
-struct FiFo {
-    data: [u32; 8],
-    head: usize,
-}
-
-impl FiFo {
-    fn push(&mut self, val: u32) {
-        self.data.rotate_left(1);
-        self.data[7] = val;
-    }
-}
-
-
 #[derive(Clone)]
 struct TFToken {
     tf: u32,
@@ -35,7 +22,6 @@ enum NGramKey {
 struct Vocab {
     vocab: FxHashMap<String, u32>,
     higher_grams: [FxHashMap<NGramKey, u32>; 7],
-    num_tokens: usize,
 }
 
 impl Vocab {
@@ -102,7 +88,7 @@ enum TokenizationError {
 }
 
 #[inline]
-fn process_doc_whitespace_hashmap_queue(
+fn process_doc_whitespace_hashmap(
     text: &str,
     vectorizer: &mut TfidfVectorizer<f32>,
     doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
@@ -111,12 +97,9 @@ fn process_doc_whitespace_hashmap_queue(
     n_gram_range: (usize, usize),
 ) -> Result<(), TokenizationError> {
 
-    let mut n_gram_queue: FiFo = FiFo {
-        data: [0; 8],
-        head: 0,
-    };
-
     let mut buffer_idx: usize = 0;
+    let mut n_gram_buffer: [u32; 8] = [0; 8];
+
     doc_tokens_hashmap.clear();
     for char in text.as_bytes().iter() {
         match char {
@@ -135,63 +118,6 @@ fn process_doc_whitespace_hashmap_queue(
                     vectorizer.vocab.insert(str_ref.to_string(), vectorizer.dfs.len() as u32);
                     doc_tokens_hashmap.insert(vectorizer.dfs.len() as u32, 1);
                     vectorizer.dfs.push(1);
-                }
-
-                buffer_idx = 0;
-            },
-            _ => {
-                if lowercase {
-                    token_buffer[buffer_idx] = char.to_ascii_lowercase();
-                } else {
-                    token_buffer[buffer_idx] = *char;
-                }
-                buffer_idx += 1;
-            },
-        }
-    }
-
-    vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
-
-    for (term_id, tf) in doc_tokens_hashmap.iter() {
-        vectorizer.csr_mat.values.push(*tf as f32);
-        vectorizer.csr_mat.col_idxs.push(*term_id);
-    }
-
-    Ok(())
-}
-
-
-#[inline]
-fn process_doc_whitespace_hashmap(
-    text: &str,
-    vectorizer: &mut TfidfVectorizer<f32>,
-    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
-    token_buffer: &mut [u8; 4096],
-    lowercase: bool,
-    n_gram_range: (usize, usize),
-) -> Result<(), TokenizationError> {
-
-    let mut buffer_idx: usize = 0;
-    doc_tokens_hashmap.clear();
-    for char in text.as_bytes().iter() {
-        match char {
-            b' ' | b'\t' | b'\n' | b'\r' => {
-                let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
-
-                if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
-                    match doc_tokens_hashmap.get_mut(&term_id) {
-                        Some(item) => *item += 1,
-                        None => {
-                            vectorizer.dfs[term_id as usize] += 1;
-                            doc_tokens_hashmap.insert(term_id, 1);
-                        },
-                    }
-                } else {
-                    vectorizer.vocab.insert(str_ref.to_string(), vectorizer.vocab.num_tokens as u32);
-                    doc_tokens_hashmap.insert(vectorizer.vocab.num_tokens as u32, 1);
-                    vectorizer.dfs.push(1);
-
-                    vectorizer.vocab.num_tokens += 1;
                 }
 
                 buffer_idx = 0;
@@ -247,14 +173,12 @@ fn process_doc_whitespace(
                         },
                     }
                 } else {
-                    vectorizer.vocab.insert(str_ref.to_string(), vectorizer.vocab.num_tokens as u32);
+                    vectorizer.vocab.insert(str_ref.to_string(), vectorizer.dfs.len() as u32);
                     doc_tokens.push(TFToken{
                         tf: 1,
-                        term_id: vectorizer.vocab.num_tokens as u32,
+                        term_id: vectorizer.dfs.len() as u32,
                     });
                     vectorizer.dfs.push(1);
-
-                    vectorizer.vocab.num_tokens += 1;
                 }
 
                 buffer_idx = 0;
@@ -307,7 +231,6 @@ fn fit_transform(
                 FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 6) as usize, Default::default()),
                 FxHashMap::with_capacity_and_hasher((count / 6) * (n_gram_range.1 > 7) as usize, Default::default()),
             ],
-            num_tokens: 0,
         },
         dfs: Vec::new(),
         csr_mat: CSRMatrix {
