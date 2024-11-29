@@ -8,6 +8,61 @@ struct TFToken {
     term_id: u32,
 }
 
+#[derive(Eq, PartialEq, Hash)]
+enum NGramKey {
+    Bigram([u32; 2]),
+    Trigram([u32; 3]),
+    Quadgram([u32; 4]),
+    Pentagram([u32; 5]),
+    Hexagram([u32; 6]),
+    Heptagram([u32; 7]),
+    Octagram([u32; 8]),
+}
+
+struct Vocab {
+    vocab: FxHashMap<String, u32>,
+    higher_grams: [FxHashMap<NGramKey, u32>; 7],
+}
+
+impl Vocab {
+    #[inline]
+    fn insert(&mut self, key: String, value: u32) {
+        self.vocab.insert(key, value);
+    }
+
+    #[inline]
+    fn insert_ngram(&mut self, key: NGramKey, value: u32) {
+        match key {
+            NGramKey::Bigram(_) => {
+                self.higher_grams[0].insert(key, value);
+            },
+            NGramKey::Trigram(_) => {
+                self.higher_grams[1].insert(key, value);
+            },
+            NGramKey::Quadgram(_) => {
+                self.higher_grams[2].insert(key, value);
+            },
+            NGramKey::Pentagram(_) => {
+                self.higher_grams[3].insert(key, value);
+            },
+            NGramKey::Hexagram(_) => {
+                self.higher_grams[4].insert(key, value);
+            },
+            NGramKey::Heptagram(_) => {
+                self.higher_grams[5].insert(key, value);
+            },
+            NGramKey::Octagram(_) => {
+                self.higher_grams[6].insert(key, value);
+            },
+        }
+    }
+
+    #[inline]
+    fn get(&self, key: &str) -> Option<&u32> {
+        self.vocab.get(key)
+    }
+}
+
 struct CSRMatrix<T> {
     // data
     values: Vec<T>,
@@ -20,7 +75,8 @@ struct CSRMatrix<T> {
 }
 
 struct TfidfVectorizer<T> {
-    vocab: FxHashMap<String, u32>,
+    // vocab: FxHashMap<String, u32>,
+    vocab: Vocab,
     dfs: Vec<u32>,
     csr_mat: CSRMatrix<T>,
 }
@@ -37,6 +93,8 @@ fn process_doc_whitespace_hashmap(
     vectorizer: &mut TfidfVectorizer<f32>,
     doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
     token_buffer: &mut [u8; 4096],
+    lowercase: bool,
+    n_gram_range: (usize, usize),
 ) -> Result<(), TokenizationError> {
 
     let mut buffer_idx: usize = 0;
@@ -64,7 +122,11 @@ fn process_doc_whitespace_hashmap(
                 buffer_idx = 0;
             },
             _ => {
-                token_buffer[buffer_idx] = *char;
+                if lowercase {
+                    token_buffer[buffer_idx] = char.to_ascii_lowercase();
+                } else {
+                    token_buffer[buffer_idx] = *char;
+                }
                 buffer_idx += 1;
             },
         }
@@ -86,6 +148,8 @@ fn process_doc_whitespace(
     vectorizer: &mut TfidfVectorizer<f32>,
     doc_tokens: &mut Vec<TFToken>,
     token_buffer: &mut [u8; 4096],
+    lowercase: bool,
+    n_gram_range: (usize, usize),
 ) -> Result<(), TokenizationError> {
 
     let mut buffer_idx: usize = 0;
@@ -119,7 +183,11 @@ fn process_doc_whitespace(
                 buffer_idx = 0;
             },
             _ => {
-                token_buffer[buffer_idx] = *char;
+                if lowercase {
+                    token_buffer[buffer_idx] = char.to_ascii_lowercase();
+                } else {
+                    token_buffer[buffer_idx] = *char;
+                }
                 buffer_idx += 1;
             },
         }
@@ -136,10 +204,19 @@ fn process_doc_whitespace(
 }
 
 
-fn fit_transform(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsError> {
+fn fit_transform(
+    text_series: &Column,
+    lowercase: bool,
+    n_gram_range: (usize, usize),
+    ) -> Result<TfidfVectorizer<f32>, PolarsError> {
     let start_time = std::time::Instant::now();
 
+    assert!(n_gram_range.0 <= n_gram_range.1, "n_gram_range.0 must be less than or equal to n_gram_range.1.");
+    assert!(n_gram_range.0 > 0, "n_gram_range.0 must be greater than 0.");
+    assert!(n_gram_range.1 - n_gram_range.0 <= 7, "width of n_gram_range must be less than 8.");
+
     let count = text_series.len();
+    assert!(count > 0);
 
     let mut vectorizer: TfidfVectorizer<f32> = TfidfVectorizer {
         vocab: FxHashMap::with_capacity_and_hasher(count / 6, Default::default()),
@@ -171,6 +248,8 @@ fn fit_transform(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsErr
                 &mut vectorizer,
                 &mut doc_tokens_hashmap,
                 &mut token_buffer,
+                lowercase,
+                n_gram_range,
             ).unwrap();
         } else {
             process_doc_whitespace(
@@ -178,6 +257,8 @@ fn fit_transform(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsErr
                 &mut vectorizer,
                 &mut doc_tokens,
                 &mut token_buffer,
+                lowercase,
+                n_gram_range,
             ).unwrap();
         }
 
@@ -196,6 +277,7 @@ fn fit_transform(text_series: &Column) -> Result<TfidfVectorizer<f32>, PolarsErr
     let elapsed = start_time.elapsed();
     println!("Time: {:?}", elapsed);
     println!("KDocs per second: {:?}", 0.001 * count as f32 / elapsed.as_secs_f32());
+
     Ok(vectorizer)
 }
 
@@ -208,7 +290,11 @@ fn main() -> Result<(), PolarsError> {
     // println!("{:?}", lf.clone().collect_schema()?);
 
     let column = "title";
-    _ = fit_transform(lf.clone().select([col(column)]).collect()?.column(column)?);
+    _ = fit_transform(
+        lf.clone().select([col(column)]).collect()?.column(column)?,
+        true,
+        (1, 1),
+        );
 
     Ok(())
 }
