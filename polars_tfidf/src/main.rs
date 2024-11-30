@@ -5,12 +5,13 @@ use polars::prelude::*;
 struct FiFo {
     data: [u32; 8],
     head: usize,
+    capacity: usize,
 }
 
 impl FiFo {
     fn push(&mut self, val: u32) {
         self.data.rotate_left(1);
-        self.data[7] = val;
+        self.data[self.capacity] = val;
     }
 }
 
@@ -89,7 +90,6 @@ struct CSRMatrix<T> {
 }
 
 struct TfidfVectorizer<T> {
-    // vocab: FxHashMap<String, u32>,
     vocab: Vocab,
     dfs: Vec<u32>,
     csr_mat: CSRMatrix<T>,
@@ -111,9 +111,11 @@ fn process_doc_whitespace_hashmap_queue(
     n_gram_range: (usize, usize),
 ) -> Result<(), TokenizationError> {
 
+    let n_gram_width = n_gram_range.1 - n_gram_range.0;
     let mut n_gram_queue: FiFo = FiFo {
         data: [0; 8],
         head: 0,
+        capacity: n_gram_width,
     };
 
     let mut buffer_idx: usize = 0;
@@ -129,6 +131,8 @@ fn process_doc_whitespace_hashmap_queue(
                         None => {
                             vectorizer.dfs[term_id as usize] += 1;
                             doc_tokens_hashmap.insert(term_id, 1);
+
+                            n_gram_queue.push(term_id);
                         },
                     }
                 } else {
