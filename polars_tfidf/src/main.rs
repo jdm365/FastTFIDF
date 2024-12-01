@@ -173,6 +173,8 @@ fn process_doc_whitespace_hashmap(
     token_buffer: &mut [u8; 4096],
     lowercase: bool,
     n_gram_range: (usize, usize),
+    min_df: usize,
+    max_df: usize,
 ) -> Result<(), TokenizationError> {
 
     let mut buffer_idx: usize = 0;
@@ -211,7 +213,7 @@ fn process_doc_whitespace_hashmap(
         }
     }
 
-    vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
+    // vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
 
     for (term_id, tf) in doc_tokens_hashmap.iter() {
         vectorizer.csr_mat.values.push(*tf as f32);
@@ -229,6 +231,8 @@ fn process_doc_whitespace(
     token_buffer: &mut [u8; 4096],
     lowercase: bool,
     n_gram_range: (usize, usize),
+    min_df: usize,
+    max_df: usize,
 ) -> Result<(), TokenizationError> {
 
     let mut buffer_idx: usize = 0;
@@ -274,7 +278,7 @@ fn process_doc_whitespace(
         }
     }
 
-    vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
+    // vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
 
     for token in doc_tokens.iter() {
         vectorizer.csr_mat.values.push(token.tf as f32);
@@ -289,8 +293,13 @@ fn fit_transform(
     text_series: &Column,
     lowercase: bool,
     n_gram_range: (usize, usize),
+    _min_df: Option<usize>,
+    _max_df: Option<usize>,
     ) -> Result<TfidfVectorizer<f32>, PolarsError> {
     let start_time = std::time::Instant::now();
+
+    let min_df = _min_df.unwrap_or(0);
+    let max_df = _max_df.unwrap_or(std::usize::MAX);
 
     assert!(n_gram_range.0 <= n_gram_range.1, "n_gram_range.0 must be less than or equal to n_gram_range.1.");
     assert!(n_gram_range.0 > 0, "n_gram_range.0 must be greater than 0.");
@@ -343,6 +352,8 @@ fn fit_transform(
                 &mut token_buffer,
                 lowercase,
                 n_gram_range,
+                min_df,
+                max_df,
             ).unwrap();
         } else {
             process_doc_whitespace(
@@ -352,20 +363,45 @@ fn fit_transform(
                 &mut token_buffer,
                 lowercase,
                 n_gram_range,
+                min_df,
+                max_df,
             ).unwrap();
         }
 
         idx += 1;
     });
 
-    // Add the last row. Necessary for csr indptr format.
-    vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
-
+    let mut remove_idxs: Vec<usize> = Vec::new();
     for (idx, v) in vectorizer.csr_mat.values.iter_mut().enumerate() {
-        let df = vectorizer.dfs[vectorizer.csr_mat.col_idxs[idx] as usize];
-        let idf = (count as f32/ (1 + df) as f32).ln();
+        let val = vectorizer.csr_mat.col_idxs[idx] as usize;
+        let df = vectorizer.dfs[val];
+
+        if (df < min_df as u32) || (df > max_df as u32) {
+            remove_idxs.push(idx);
+            continue;
+        }
+
+        let idf = (count as f32 / (1 + df) as f32).ln();
         *v *= idf;
     };
+
+    for &index in remove_idxs.iter().rev() {
+        vectorizer.csr_mat.values.swap_remove(index);
+        vectorizer.csr_mat.col_idxs.swap_remove(index);
+    }
+    vectorizer.csr_mat.values.shrink_to_fit();
+    vectorizer.csr_mat.col_idxs.shrink_to_fit();
+
+    let mut last_idx: u32 = 0;
+    for (idx, v) in vectorizer.csr_mat.col_idxs.iter().enumerate() {
+        if *v < last_idx {
+            last_idx = *v;
+            vectorizer.csr_mat.row_start_pos.push(idx as u64);
+        }
+    }
+
+    // Add the last row. Necessary for csr indptr format.
+    vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
 
     let elapsed = start_time.elapsed();
     println!("Time: {:?}", elapsed);
@@ -387,6 +423,8 @@ fn main() -> Result<(), PolarsError> {
         lf.clone().select([col(column)]).collect()?.column(column)?,
         true,
         (1, 1),
+        None,
+        None,
         );
 
     Ok(())
