@@ -8,12 +8,17 @@ struct FiFo {
 }
 
 impl FiFo {
+    #[inline]
     fn push(&mut self, val: u32) {
         self.data.rotate_left(1);
         self.data[self.capacity] = val;
     }
-}
 
+    #[inline]
+    fn get_last(&self, size: usize) -> &[u32] {
+        &self.data[(self.capacity - size)..self.capacity]
+    }
+}
 
 #[derive(Clone)]
 struct TFToken {
@@ -45,29 +50,30 @@ impl Vocab {
     }
 
     #[inline]
-    fn insert_ngram(&mut self, key: NGramKey, value: u32) {
-        match key {
-            NGramKey::Bigram(_) => {
-                self.higher_grams[0].insert(key, value);
+    fn insert_ngram_arr(&mut self, key: &[u32], value: u32) {
+        match key.len() {
+            2 => {
+                self.higher_grams[0].insert(NGramKey::Bigram(key.try_into().unwrap()), value);
             },
-            NGramKey::Trigram(_) => {
-                self.higher_grams[1].insert(key, value);
+            3 => {
+                self.higher_grams[1].insert(NGramKey::Trigram(key.try_into().unwrap()), value);
             },
-            NGramKey::Quadgram(_) => {
-                self.higher_grams[2].insert(key, value);
+            4 => {
+                self.higher_grams[2].insert(NGramKey::Quadgram(key.try_into().unwrap()), value);
             },
-            NGramKey::Pentagram(_) => {
-                self.higher_grams[3].insert(key, value);
+            5 => {
+                self.higher_grams[3].insert(NGramKey::Pentagram(key.try_into().unwrap()), value);
             },
-            NGramKey::Hexagram(_) => {
-                self.higher_grams[4].insert(key, value);
+            6 => {
+                self.higher_grams[4].insert(NGramKey::Hexagram(key.try_into().unwrap()), value);
             },
-            NGramKey::Heptagram(_) => {
-                self.higher_grams[5].insert(key, value);
+            7 => {
+                self.higher_grams[5].insert(NGramKey::Heptagram(key.try_into().unwrap()), value);
             },
-            NGramKey::Octagram(_) => {
-                self.higher_grams[6].insert(key, value);
+            8 => {
+                self.higher_grams[6].insert(NGramKey::Octagram(key.try_into().unwrap()), value);
             },
+            _ => panic!("Invalid ngram size."),
         }
     }
 
@@ -77,29 +83,30 @@ impl Vocab {
     }
 
     #[inline]
-    fn get_ngram(&self, key: NGramKey) -> Option<&u32> {
-        match key {
-            NGramKey::Bigram(key) => {
-                self.higher_grams[0].get(&NGramKey::Bigram(key))
+    fn get_ngram_arr(&self, key: &[u32]) -> Option<&u32> {
+        match key.len() {
+            2 => {
+                self.higher_grams[0].get(&NGramKey::Bigram(key.try_into().unwrap()))
             },
-            NGramKey::Trigram(key) => {
-                self.higher_grams[1].get(&NGramKey::Trigram(key))
+            3 => {
+                self.higher_grams[1].get(&NGramKey::Trigram(key.try_into().unwrap()))
             },
-            NGramKey::Quadgram(key) => {
-                self.higher_grams[2].get(&NGramKey::Quadgram(key))
+            4 => {
+                self.higher_grams[2].get(&NGramKey::Quadgram(key.try_into().unwrap()))
             },
-            NGramKey::Pentagram(key) => {
-                self.higher_grams[3].get(&NGramKey::Pentagram(key))
+            5 => {
+                self.higher_grams[3].get(&NGramKey::Pentagram(key.try_into().unwrap()))
             },
-            NGramKey::Hexagram(key) => {
-                self.higher_grams[4].get(&NGramKey::Hexagram(key))
+            6 => {
+                self.higher_grams[4].get(&NGramKey::Hexagram(key.try_into().unwrap()))
             },
-            NGramKey::Heptagram(key) => {
-                self.higher_grams[5].get(&NGramKey::Heptagram(key))
+            7 => {
+                self.higher_grams[5].get(&NGramKey::Heptagram(key.try_into().unwrap()))
             },
-            NGramKey::Octagram(key) => {
-                self.higher_grams[6].get(&NGramKey::Octagram(key))
+            8 => {
+                self.higher_grams[6].get(&NGramKey::Octagram(key.try_into().unwrap()))
             },
+            _ => panic!("Invalid ngram size."),
         }
     }
 }
@@ -127,149 +134,44 @@ enum TokenizationError {
     InvalidToken,
 }
 
-
 #[inline]
-fn add_all_ngrams(
+fn add_ngrams_range(
     vectorizer: &mut TfidfVectorizer<f32>,
     doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
     ngram_queue: &FiFo,
-    ngram_width: usize,
+    min_size: usize,
+    max_size: usize,
 ) {
-    for i in 0..ngram_width {
-        let ngram_size = i + 2;
+    assert!(min_size > 1, "ngram_size must be greater than 1.");
+    assert!(max_size <= 8, "ngram_size must be greater than 1.");
 
-        for j in 0..(ngram_width - i) {
-            if let Some(&term_id) = match ngram_size {
-                2 => {
-                    let key = NGramKey::Bigram(ngram_queue.data[j..j+1].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                3 => {
-                    let key = NGramKey::Trigram(ngram_queue.data[j..j+2].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                4 => {
-                    let key = NGramKey::Quadgram(ngram_queue.data[j..j+3].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                5 => {
-                    let key = NGramKey::Pentagram(ngram_queue.data[j..j+4].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                6 => {
-                    let key = NGramKey::Hexagram(ngram_queue.data[j..j+5].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                7 => {
-                    let key = NGramKey::Heptagram(ngram_queue.data[j..j+6].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                8 => {
-                    let key = NGramKey::Octagram(ngram_queue.data[j..j+7].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                _ => panic!("Invalid ngram size."),
-            } {
-                // Term already exists in vocab.
-                match doc_tokens_hashmap.get_mut(&term_id) {
-                    Some(item) => *item += 1,
-                    None => {
-                        vectorizer.dfs[term_id as usize] += 1;
-                        doc_tokens_hashmap.insert(term_id, 1);
-                    },
-                }
-            } else {
-                // Term does not exist in vocab.
-                let term_id = vectorizer.vocab.num_tokens as u32;
-
-                match ngram_size {
-                    2 => vectorizer.vocab.insert_ngram(NGramKey::Bigram(ngram_queue.data[j..j+1].try_into().unwrap()), term_id),
-                    3 => vectorizer.vocab.insert_ngram(NGramKey::Trigram(ngram_queue.data[j..j+2].try_into().unwrap()), term_id),
-                    4 => vectorizer.vocab.insert_ngram(NGramKey::Quadgram(ngram_queue.data[j..j+3].try_into().unwrap()), term_id),
-                    5 => vectorizer.vocab.insert_ngram(NGramKey::Pentagram(ngram_queue.data[j..j+4].try_into().unwrap()), term_id),
-                    6 => vectorizer.vocab.insert_ngram(NGramKey::Hexagram(ngram_queue.data[j..j+5].try_into().unwrap()), term_id),
-                    7 => vectorizer.vocab.insert_ngram(NGramKey::Heptagram(ngram_queue.data[j..j+6].try_into().unwrap()), term_id),
-                    8 => vectorizer.vocab.insert_ngram(NGramKey::Octagram(ngram_queue.data[j..j+7].try_into().unwrap()), term_id),
-                    _ => panic!("Invalid ngram size."),
-                }
-                doc_tokens_hashmap.insert(term_id, 1);
-                vectorizer.dfs.push(1);
-
-                vectorizer.vocab.num_tokens += 1;
+    for ngram_size in min_size..max_size+1 {
+        let arr = ngram_queue.get_last(ngram_size);
+        for &item in arr.iter() {
+            if item == std::u32::MAX {
+                continue;
             }
         }
-    }
-}
 
-#[inline]
-fn add_last_ngrams(
-    vectorizer: &mut TfidfVectorizer<f32>,
-    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
-    ngram_queue: &FiFo,
-    ngram_width: usize,
-) {
-    for i in 0..ngram_width {
-        let ngram_size = i + 2;
-
-        for j in 0..(ngram_width - i) {
-            if let Some(&term_id) = match ngram_size {
-                2 => {
-                    let key = NGramKey::Bigram(ngram_queue.data[j..j+1].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
+        if let Some(&term_id) = vectorizer.vocab.get_ngram_arr(&arr) {
+            // Term already exists in vocab.
+            match doc_tokens_hashmap.get_mut(&term_id) {
+                Some(item) => *item += 1,
+                None => {
+                    vectorizer.dfs[term_id as usize] += 1;
+                    doc_tokens_hashmap.insert(term_id, 1);
                 },
-                3 => {
-                    let key = NGramKey::Trigram(ngram_queue.data[j..j+2].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                4 => {
-                    let key = NGramKey::Quadgram(ngram_queue.data[j..j+3].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                5 => {
-                    let key = NGramKey::Pentagram(ngram_queue.data[j..j+4].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                6 => {
-                    let key = NGramKey::Hexagram(ngram_queue.data[j..j+5].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                7 => {
-                    let key = NGramKey::Heptagram(ngram_queue.data[j..j+6].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                8 => {
-                    let key = NGramKey::Octagram(ngram_queue.data[j..j+7].try_into().unwrap());
-                    vectorizer.vocab.get_ngram(key)
-                },
-                _ => panic!("Invalid ngram size."),
-            } {
-                // Term already exists in vocab.
-                match doc_tokens_hashmap.get_mut(&term_id) {
-                    Some(item) => *item += 1,
-                    None => {
-                        vectorizer.dfs[term_id as usize] += 1;
-                        doc_tokens_hashmap.insert(term_id, 1);
-                    },
-                }
-            } else {
-                // Term does not exist in vocab.
-                let term_id = vectorizer.vocab.num_tokens as u32;
-
-                match ngram_size {
-                    2 => vectorizer.vocab.insert_ngram(NGramKey::Bigram(ngram_queue.data[j..j+1].try_into().unwrap()), term_id),
-                    3 => vectorizer.vocab.insert_ngram(NGramKey::Trigram(ngram_queue.data[j..j+2].try_into().unwrap()), term_id),
-                    4 => vectorizer.vocab.insert_ngram(NGramKey::Quadgram(ngram_queue.data[j..j+3].try_into().unwrap()), term_id),
-                    5 => vectorizer.vocab.insert_ngram(NGramKey::Pentagram(ngram_queue.data[j..j+4].try_into().unwrap()), term_id),
-                    6 => vectorizer.vocab.insert_ngram(NGramKey::Hexagram(ngram_queue.data[j..j+5].try_into().unwrap()), term_id),
-                    7 => vectorizer.vocab.insert_ngram(NGramKey::Heptagram(ngram_queue.data[j..j+6].try_into().unwrap()), term_id),
-                    8 => vectorizer.vocab.insert_ngram(NGramKey::Octagram(ngram_queue.data[j..j+7].try_into().unwrap()), term_id),
-                    _ => panic!("Invalid ngram size."),
-                }
-                doc_tokens_hashmap.insert(term_id, 1);
-                vectorizer.dfs.push(1);
-
-                vectorizer.vocab.num_tokens += 1;
             }
+        } else {
+            // Term does not exist in vocab.
+            let term_id = vectorizer.vocab.num_tokens as u32;
+            doc_tokens_hashmap.insert(term_id, 1);
+
+            vectorizer.vocab.insert_ngram_arr(arr, term_id);
+            doc_tokens_hashmap.insert(term_id, 1);
+            vectorizer.dfs.push(1);
+
+            vectorizer.vocab.num_tokens += 1;
         }
     }
 }
@@ -286,7 +188,7 @@ fn process_doc_whitespace_hashmap_queue(
     max_df: usize,
 ) -> Result<(), TokenizationError> {
 
-    let ngram_width = ngram_range.1 - ngram_range.0;
+    let ngram_width = 1 + ngram_range.1 - ngram_range.0;
     let mut ngram_queue: FiFo = FiFo {
         data: [0; 8],
         capacity: ngram_width,
@@ -300,7 +202,6 @@ fn process_doc_whitespace_hashmap_queue(
     //               in window.                            //
     /////////////////////////////////////////////////////////
 
-    let mut idx = 0;
     let mut buffer_idx: usize = 0;
     doc_tokens_hashmap.clear();
     for char in text.as_bytes().iter() {
@@ -334,12 +235,15 @@ fn process_doc_whitespace_hashmap_queue(
 
                 buffer_idx = 0;
 
-                if idx == 0 {
-                    add_all_ngrams(vectorizer, doc_tokens_hashmap, &ngram_queue, ngram_width);
-                } else {
-                    add_last_ngrams(vectorizer, doc_tokens_hashmap, &ngram_queue, ngram_width);
+                if ngram_range.1 > 1 {
+                    add_ngrams_range(
+                        vectorizer, 
+                        doc_tokens_hashmap, 
+                        &ngram_queue, 
+                        ngram_range.0.max(2),
+                        ngram_range.1,
+                        );
                 }
-                idx += 1;
             },
             _ => {
                 if lowercase {
@@ -363,6 +267,7 @@ fn process_doc_whitespace_hashmap_queue(
 }
 
 
+#[allow(dead_code)]
 #[inline]
 fn process_doc_whitespace_hashmap(
     text: &str,
@@ -541,7 +446,6 @@ fn fit_transform(
         };
 
         if _v.len() > 256 {
-            // process_doc_whitespace_hashmap(
             process_doc_whitespace_hashmap_queue(
                 _v,
                 &mut vectorizer,
@@ -614,14 +518,16 @@ fn main() -> Result<(), PolarsError> {
     // println!("{:?}", lf.clone().collect_schema()?);
 
     let column = "title";
-    _ = fit_transform(
+    let vectorizer = fit_transform(
         lf.clone().select([col(column)]).collect()?.column(column)?,
         true,
-        (1, 2),
+        (1, 4),
         None,
-        // None,
-        Some(10_000),
-        );
+        None,
+        // Some(10_000),
+        ).unwrap();
+
+    println!("Vocab size: {:?}", vectorizer.vocab.num_tokens);
 
     Ok(())
 }
