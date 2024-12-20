@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 polars = { version = "0.44.2", features = ["lazy", "parquet"] }
+regex = "1.11.1"
 rustc-hash = "2.0.0"

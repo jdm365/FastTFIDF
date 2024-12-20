@@ -20,12 +20,6 @@ impl FiFo {
     }
 }
 
-#[derive(Clone)]
-struct TFToken {
-    tf: u32,
-    term_id: u32,
-}
-
 #[derive(Eq, PartialEq, Hash)]
 enum NGramKey {
     Bigram([u32; 2]),
@@ -176,7 +170,6 @@ fn add_ngrams_range(
     }
 }
 
-#[allow(dead_code)]
 #[inline]
 fn process_doc_whitespace_hashmap_queue(
     text: &str,
@@ -206,7 +199,11 @@ fn process_doc_whitespace_hashmap_queue(
     doc_tokens_hashmap.clear();
     for char in text.as_bytes().iter() {
         match char {
-            b' ' | b'\t' | b'\n' | b'\r' => {
+            // b' ' | b'\t' | b'\n' | b'\r' => {
+            b' ' | b'\t' | b'\n' | b'\r' | b'.' | b',' | b'!' | b'?' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'<' | b'>' | b'/' | b'\\' | b'|' | b'`' | b'~' | b'@' | b'#' | b'$' | b'%' | b'^' | b'&' | b'*' | b'-' | b'_' | b'=' | b'+' | b';' | b':' | b'"' | b'\'' => {
+                if buffer_idx == 0 {
+                    continue;
+                }
                 let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
 
                 if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
@@ -267,128 +264,6 @@ fn process_doc_whitespace_hashmap_queue(
 }
 
 
-#[allow(dead_code)]
-#[inline]
-fn process_doc_whitespace_hashmap(
-    text: &str,
-    vectorizer: &mut TfidfVectorizer<f32>,
-    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
-    token_buffer: &mut [u8; 4096],
-    lowercase: bool,
-    _ngram_range: (usize, usize),
-    max_df: usize,
-) -> Result<(), TokenizationError> {
-
-    let mut buffer_idx: usize = 0;
-    doc_tokens_hashmap.clear();
-    for char in text.as_bytes().iter() {
-        match char {
-            b' ' | b'\t' | b'\n' | b'\r' => {
-                let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
-
-                if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
-                    match doc_tokens_hashmap.get_mut(&term_id) {
-                        Some(item) => *item += 1,
-                        None => {
-                            vectorizer.dfs[term_id as usize] += 1;
-                            if vectorizer.dfs[term_id as usize] <= max_df as u32 {
-                                doc_tokens_hashmap.insert(term_id, 1);
-                            }
-                        },
-                    }
-                } else {
-                    vectorizer.vocab.insert(str_ref.to_string(), vectorizer.vocab.num_tokens as u32);
-                    doc_tokens_hashmap.insert(vectorizer.vocab.num_tokens as u32, 1);
-                    vectorizer.dfs.push(1);
-
-                    vectorizer.vocab.num_tokens += 1;
-                }
-
-                buffer_idx = 0;
-            },
-            _ => {
-                if lowercase {
-                    token_buffer[buffer_idx] = char.to_ascii_lowercase();
-                } else {
-                    token_buffer[buffer_idx] = *char;
-                }
-                buffer_idx += 1;
-            },
-        }
-    }
-
-    for (term_id, tf) in doc_tokens_hashmap.iter() {
-        vectorizer.csr_mat.values.push(*tf as f32);
-        vectorizer.csr_mat.col_idxs.push(*term_id);
-    }
-
-    Ok(())
-}
-
-#[inline]
-fn process_doc_whitespace(
-    text: &str,
-    vectorizer: &mut TfidfVectorizer<f32>,
-    doc_tokens: &mut Vec<TFToken>,
-    token_buffer: &mut [u8; 4096],
-    lowercase: bool,
-    _ngram_range: (usize, usize),
-    max_df: usize,
-) -> Result<(), TokenizationError> {
-
-    let mut buffer_idx: usize = 0;
-
-    doc_tokens.clear();
-    for char in text.as_bytes().iter() {
-        match char {
-            b' ' | b'\t' | b'\n' | b'\r' => {
-                let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
-
-                if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
-                    match doc_tokens.iter_mut().find(|x| x.term_id == term_id) {
-                        Some(item) => item.tf += 1,
-                        None => {
-                            vectorizer.dfs[term_id as usize] += 1;
-                            if vectorizer.dfs[term_id as usize] <= max_df as u32 {
-                                doc_tokens.push(TFToken{
-                                    tf: 1,
-                                    term_id,
-                                });
-                            }
-                        },
-                    }
-                } else {
-                    vectorizer.vocab.insert(str_ref.to_string(), vectorizer.vocab.num_tokens as u32);
-                    doc_tokens.push(TFToken{
-                        tf: 1,
-                        term_id: vectorizer.vocab.num_tokens as u32,
-                    });
-                    vectorizer.dfs.push(1);
-
-                    vectorizer.vocab.num_tokens += 1;
-                }
-
-                buffer_idx = 0;
-            },
-            _ => {
-                if lowercase {
-                    token_buffer[buffer_idx] = char.to_ascii_lowercase();
-                } else {
-                    token_buffer[buffer_idx] = *char;
-                }
-                buffer_idx += 1;
-            },
-        }
-    }
-
-    for token in doc_tokens.iter() {
-        vectorizer.csr_mat.values.push(token.tf as f32);
-        vectorizer.csr_mat.col_idxs.push(token.term_id);
-    }
-
-    Ok(())
-}
-
 
 fn fit_transform(
     text_series: &Column,
@@ -436,7 +311,6 @@ fn fit_transform(
     let mut token_buffer: [u8; N] = [0; N];
 
     let mut idx: usize = 0;
-    let mut doc_tokens: Vec<TFToken> = Vec::new();
     let mut doc_tokens_hashmap: FxHashMap<u32, u32> = FxHashMap::with_capacity_and_hasher(256, Default::default());
 
     text_series.str()?.into_iter().for_each(|v: Option<&str>| {
@@ -445,27 +319,15 @@ fn fit_transform(
             None => { idx += 1; return; },
         };
 
-        if _v.len() > 256 {
-            process_doc_whitespace_hashmap_queue(
-                _v,
-                &mut vectorizer,
-                &mut doc_tokens_hashmap,
-                &mut token_buffer,
-                lowercase,
-                ngram_range,
-                max_df,
-            ).unwrap();
-        } else {
-            process_doc_whitespace(
-                _v,
-                &mut vectorizer,
-                &mut doc_tokens,
-                &mut token_buffer,
-                lowercase,
-                ngram_range,
-                max_df,
-            ).unwrap();
-        }
+        process_doc_whitespace_hashmap_queue(
+            _v,
+            &mut vectorizer,
+            &mut doc_tokens_hashmap,
+            &mut token_buffer,
+            lowercase,
+            ngram_range,
+            max_df,
+        ).unwrap();
 
         idx += 1;
     });
@@ -510,7 +372,7 @@ fn fit_transform(
 }
 
 fn main() -> Result<(), PolarsError> {
-    const FILENAME: &str = "mb.parquet";
+    const FILENAME: &str = "mb_small.parquet";
     const N_ROWS: u32 = std::u32::MAX;
 
     let lf = LazyFrame::scan_parquet(FILENAME, Default::default())?.limit(N_ROWS);
@@ -521,13 +383,13 @@ fn main() -> Result<(), PolarsError> {
     let vectorizer = fit_transform(
         lf.clone().select([col(column)]).collect()?.column(column)?,
         true,
-        (1, 4),
+        (1, 1),
         None,
         None,
         // Some(10_000),
         ).unwrap();
 
-    println!("Vocab size: {:?}", vectorizer.vocab.num_tokens);
+    println!("Vocab size: {:?}K", vectorizer.vocab.num_tokens / 1000);
 
     Ok(())
 }
