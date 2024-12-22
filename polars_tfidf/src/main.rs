@@ -372,7 +372,7 @@ fn fit_transform(
 }
 
 fn main() -> Result<(), PolarsError> {
-    const FILENAME: &str = "mb_small.parquet";
+    const FILENAME: &str = "mb.parquet";
     const N_ROWS: u32 = std::u32::MAX;
 
     let lf = LazyFrame::scan_parquet(FILENAME, Default::default())?.limit(N_ROWS);
@@ -385,8 +385,8 @@ fn main() -> Result<(), PolarsError> {
         true,
         (1, 1),
         None,
-        None,
-        // Some(10_000),
+        // None,
+        Some(10_000),
         ).unwrap();
 
     println!("Vocab size: {:?}K", vectorizer.vocab.num_tokens / 1000);
