@@ -3,7 +3,17 @@ name = "polars_tfidf"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "polars_tfidf"
+crate-type = ["cdylib"]
+
 [dependencies]
-polars = { version = "0.44.2", features = ["lazy", "parquet"] }
+polars = { version = "0.32", features = ["lazy", "parquet"] }
+pyo3 = { version = "0.19", features = ["extension-module"] }
+pyo3-polars = "0.6"
+numpy = "0.19"
 regex = "1.11.1"
 rustc-hash = "2.0.0"
+
+[dev-dependencies]
+polars = { version = "0.32", features = ["lazy", "parquet"] }

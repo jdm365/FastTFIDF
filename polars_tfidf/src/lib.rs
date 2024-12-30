@@ -1,6 +1,8 @@
 use rustc_hash::FxHashMap;
 use polars::prelude::*;
 
+pub mod bindings;
+
 
 struct FiFo {
     data: [u32; 8],
@@ -199,8 +201,8 @@ fn process_doc_whitespace_hashmap_queue(
     doc_tokens_hashmap.clear();
     for char in text.as_bytes().iter() {
         match char {
-            // b' ' | b'\t' | b'\n' | b'\r' => {
-            b' ' | b'\t' | b'\n' | b'\r' | b'.' | b',' | b'!' | b'?' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'<' | b'>' | b'/' | b'\\' | b'|' | b'`' | b'~' | b'@' | b'#' | b'$' | b'%' | b'^' | b'&' | b'*' | b'-' | b'_' | b'=' | b'+' | b';' | b':' | b'"' | b'\'' => {
+            0..=47 | 58..=64 | 91..=96 | 123..=126 => {
+
                 if buffer_idx == 0 {
                     continue;
                 }
@@ -264,9 +266,8 @@ fn process_doc_whitespace_hashmap_queue(
 }
 
 
-
 fn fit_transform(
-    text_series: &Column,
+    text_series: &Series,
     lowercase: bool,
     ngram_range: (usize, usize),
     _min_df: Option<usize>,
@@ -313,7 +314,8 @@ fn fit_transform(
     let mut idx: usize = 0;
     let mut doc_tokens_hashmap: FxHashMap<u32, u32> = FxHashMap::with_capacity_and_hasher(256, Default::default());
 
-    text_series.str()?.into_iter().for_each(|v: Option<&str>| {
+    // text_series.str()?.into_iter().for_each(|v: Option<&str>| {
+    text_series.utf8()?.into_iter().for_each(|v: Option<&str>| {
         let _v: &str = match v {
             Some(v) => v,
             None => { idx += 1; return; },
@@ -371,25 +373,30 @@ fn fit_transform(
     Ok(vectorizer)
 }
 
-fn main() -> Result<(), PolarsError> {
-    const FILENAME: &str = "mb.parquet";
-    const N_ROWS: u32 = std::u32::MAX;
 
-    let lf = LazyFrame::scan_parquet(FILENAME, Default::default())?.limit(N_ROWS);
-    // println!("{:?}", lf.clone().collect());
-    // println!("{:?}", lf.clone().collect_schema()?);
+#[cfg(test)]
+mod tests {
+    use polars::prelude::*;
+    use super::*;
 
-    let column = "title";
-    let vectorizer = fit_transform(
-        lf.clone().select([col(column)]).collect()?.column(column)?,
-        true,
-        (1, 1),
-        None,
-        // None,
-        Some(10_000),
-        ).unwrap();
+    #[test]
+    fn test_build() -> Result<(), PolarsError> {
+        const FILENAME: &str = "mb.parquet";
+        const N_ROWS: u32 = std::u32::MAX;
 
-    println!("Vocab size: {:?}K", vectorizer.vocab.num_tokens / 1000);
+        let lf = LazyFrame::scan_parquet(FILENAME, Default::default())?.limit(N_ROWS);
 
-    Ok(())
+        let column = "title";
+        let vectorizer = fit_transform(
+            lf.clone().select([col(column)]).collect()?.column(column)?,
+            true,
+            (1, 1),
+            None,
+            Some(10_000),
+            ).unwrap();
+
+        eprintln!("Vocab size: {:?}K", vectorizer.vocab.num_tokens / 1000);
+
+        Ok(())
+    }
 }
