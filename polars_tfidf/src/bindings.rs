@@ -42,7 +42,7 @@ impl PyTfidfVectorizer {
         }
     }
 
-    #[pyo3(signature = (series, lowercase=true, ngram_range=(1, 1), min_df=None, max_df=None))]
+    #[pyo3(signature = (series, lowercase=true, ngram_range=(1, 1), min_df=None, max_df=None, whitespace_tokenization=true))]
     fn fit_transform(
         &mut self,
         series: PySeries,
@@ -50,6 +50,7 @@ impl PyTfidfVectorizer {
         ngram_range: (usize, usize),
         min_df: Option<usize>,
         max_df: Option<usize>,
+        whitespace_tokenization: bool,
         py: Python<'_>,
     ) -> PyResult<(Py<PyArray1<f32>>, Py<PyArray1<u32>>, Py<PyArray1<u64>>)> {
         let series: Series = series.into();
@@ -60,6 +61,7 @@ impl PyTfidfVectorizer {
             ngram_range,
             min_df,
             max_df,
+            whitespace_tokenization,
         ) {
             Ok(vectorizer) => {
                 self.inner = vectorizer;

@@ -20,9 +20,17 @@ class TfidfVectorizer:
         ngram_range: Tuple[int, int] = (1, 1),
         min_df: Optional[int] = None,
         max_df: Optional[int] = None,
+        whitespace_tokenization: bool = True,
         return_csr: bool = False,
     ):
-        X = self._vectorizer.fit_transform(text, lowercase, ngram_range, min_df, max_df)
+        X = self._vectorizer.fit_transform(
+                text, 
+                lowercase=lowercase, 
+                ngram_range=ngram_range,
+                min_df=min_df,
+                max_df=max_df,
+                whitespace_tokenization=whitespace_tokenization,
+                )
 
         if return_csr:
             return self.to_csr(*X)

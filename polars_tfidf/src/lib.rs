@@ -250,7 +250,9 @@ fn process_doc_whitespace_hashmap_queue(
                 } else {
                     token_buffer[buffer_idx] = *char;
                 }
-                buffer_idx += 1;
+                if *char < 128 {
+                    buffer_idx += 1;
+                }
             },
         }
     }
@@ -265,6 +267,105 @@ fn process_doc_whitespace_hashmap_queue(
     Ok(())
 }
 
+#[inline]
+fn process_doc_char_hashmap_queue(
+    text: &str,
+    vectorizer: &mut TfidfVectorizer<f32>,
+    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
+    token_buffer: &mut [u8; 4096],
+    lowercase: bool,
+    ngram_range: (usize, usize),
+    max_df: usize,
+) -> Result<(), TokenizationError> {
+
+    let ngram_width = 1 + ngram_range.1 - ngram_range.0;
+    let mut ngram_queue: FiFo = FiFo {
+        data: [0; 8],
+        capacity: ngram_width,
+    };
+
+    /////////////////////////////////////////////////////////
+    //                    Queue Adding                     //
+    //                                                     //
+    // First iter  - Add all first -> max grams in window  //
+    // Other iters - Add only final grams for all ranges   //
+    //               in window.                            //
+    /////////////////////////////////////////////////////////
+    let mut cntr: usize = ngram_range.0;
+
+    let mut buffer_idx: usize = 0;
+    doc_tokens_hashmap.clear();
+    for char in text.as_bytes().iter() {
+        match cntr {
+            0 => {
+                cntr = ngram_range.0;
+
+                if buffer_idx == 0 {
+                    continue;
+                }
+
+                let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
+
+                if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
+                    match doc_tokens_hashmap.get_mut(&term_id) {
+                        Some(item) => *item += 1,
+                        None => {
+                            vectorizer.dfs[term_id as usize] += 1;
+                            if vectorizer.dfs[term_id as usize] <= max_df as u32 {
+                                doc_tokens_hashmap.insert(term_id, 1);
+                            }
+
+                            ngram_queue.push(term_id);
+                        },
+                    }
+                } else {
+                    let term_id = vectorizer.vocab.num_tokens as u32;
+
+                    vectorizer.vocab.insert(str_ref.to_string(), term_id);
+                    doc_tokens_hashmap.insert(term_id, 1);
+                    vectorizer.dfs.push(1);
+
+                    vectorizer.vocab.num_tokens += 1;
+
+                    ngram_queue.push(term_id);
+                }
+
+                buffer_idx = 0;
+
+                if ngram_range.1 > 1 {
+                    add_ngrams_range(
+                        vectorizer, 
+                        doc_tokens_hashmap, 
+                        &ngram_queue, 
+                        ngram_range.0.max(2),
+                        ngram_range.1,
+                        );
+                }
+            },
+            _ => {
+                if lowercase {
+                    token_buffer[buffer_idx] = char.to_ascii_lowercase();
+                } else {
+                    token_buffer[buffer_idx] = *char;
+                }
+
+                if *char < 128 {
+                    buffer_idx += 1;
+                    cntr -= 1;
+                }
+            },
+        }
+    }
+
+    vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
+
+    for (term_id, tf) in doc_tokens_hashmap.iter() {
+        vectorizer.csr_mat.values.push(*tf as f32);
+        vectorizer.csr_mat.col_idxs.push(*term_id);
+    }
+
+    Ok(())
+}
 
 fn fit_transform(
     text_series: &Series,
@@ -272,6 +373,7 @@ fn fit_transform(
     ngram_range: (usize, usize),
     _min_df: Option<usize>,
     _max_df: Option<usize>,
+    whitespace_tokenization: bool,
     ) -> Result<TfidfVectorizer<f32>, PolarsError> {
     let min_df = _min_df.unwrap_or(0);
     let max_df = _max_df.unwrap_or(std::usize::MAX);
@@ -319,15 +421,27 @@ fn fit_transform(
             None => { idx += 1; return; },
         };
 
-        process_doc_whitespace_hashmap_queue(
-            _v,
-            &mut vectorizer,
-            &mut doc_tokens_hashmap,
-            &mut token_buffer,
-            lowercase,
-            ngram_range,
-            max_df,
-        ).unwrap();
+        if whitespace_tokenization {
+            process_doc_whitespace_hashmap_queue(
+                _v,
+                &mut vectorizer,
+                &mut doc_tokens_hashmap,
+                &mut token_buffer,
+                lowercase,
+                ngram_range,
+                max_df,
+            ).unwrap();
+        } else {
+            process_doc_char_hashmap_queue(
+                _v,
+                &mut vectorizer,
+                &mut doc_tokens_hashmap,
+                &mut token_buffer,
+                lowercase,
+                ngram_range,
+                max_df,
+            ).unwrap();
+        }
 
         idx += 1;
     });
@@ -387,6 +501,7 @@ mod tests {
             (1, 1),
             None,
             Some(10_000),
+            false,
             ).unwrap();
 
         eprintln!("Vocab size: {:?}K", vectorizer.vocab.num_tokens / 1000);
