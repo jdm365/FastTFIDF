@@ -42,7 +42,7 @@ impl PyTfidfVectorizer {
         }
     }
 
-    #[pyo3(signature = (series, lowercase, ngram_range, min_df=None, max_df=None))]
+    #[pyo3(signature = (series, lowercase=true, ngram_range=(1, 1), min_df=None, max_df=None))]
     fn fit_transform(
         &mut self,
         series: PySeries,
@@ -85,7 +85,7 @@ impl PyTfidfVectorizer {
 }
 
 #[pymodule]
-fn polars_tfidf(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyTfidfVectorizer>()?;
     Ok(())
 }

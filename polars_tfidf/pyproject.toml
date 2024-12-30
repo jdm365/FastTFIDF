@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "polars_tfidf"
+requires-python = ">=3.8"
+dependencies = [
+    "polars>=0.32",
+    "numpy>=1.19",
+]
+version = "0.1.0"
+
+[tool.maturin]
+python-source = "python"
+features = ["pyo3/extension-module"]
+module-name = "polars_tfidf._rust"
+
+[project.optional-dependencies]
+scipy = ["scipy>=1.0"]

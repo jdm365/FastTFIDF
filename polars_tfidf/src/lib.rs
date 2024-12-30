@@ -273,8 +273,6 @@ fn fit_transform(
     _min_df: Option<usize>,
     _max_df: Option<usize>,
     ) -> Result<TfidfVectorizer<f32>, PolarsError> {
-    let start_time = std::time::Instant::now();
-
     let min_df = _min_df.unwrap_or(0);
     let max_df = _max_df.unwrap_or(std::usize::MAX);
 
@@ -365,10 +363,6 @@ fn fit_transform(
 
     // Add the last row. Necessary for csr indptr format.
     vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
-
-    let elapsed = start_time.elapsed();
-    println!("Time: {:?}", elapsed);
-    println!("KDocs per second: {:?}", 0.001 * count as f32 / elapsed.as_secs_f32());
 
     Ok(vectorizer)
 }
