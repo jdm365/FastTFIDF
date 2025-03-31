@@ -1,11 +1,11 @@
 import polars as pl
 from sklearn.feature_extraction.text import TfidfVectorizer
-from time import perf_counter
+from time import perf_counter, sleep
 
 from polars_tfidf import TfidfVectorizer as TfidfVectorizerPolars
 
 
-ANALYZER = "char"
+ANALYZER = "word"
 
 def sklearn_bench(filename: str):
     df = pl.read_parquet(filename)
@@ -22,6 +22,12 @@ def sklearn_bench(filename: str):
     print(f"KDocs per second: {len(series) * 0.001 / fit_time}")
     print(f"Vocab size: {len(vectorizer.vocabulary_) / 1000:.2f}K\n\n")
 
+    init = perf_counter()
+    vectorizer.transform(series)
+    transform_time = perf_counter() - init
+    print(f"transform time: {transform_time}")
+    print(f"KDocs per second: {len(series) * 0.001 / transform_time}")
+
 
 def polars_bench(filename: str):
     df = pl.read_parquet(filename)
@@ -36,7 +42,13 @@ def polars_bench(filename: str):
     fit_time = perf_counter() - init
     print(f"fit transform time: {fit_time}")
     print(f"KDocs per second: {len(series) * 0.001 / fit_time}\n\n")
-    ## print(f"Vocab size: {len(vectorizer.vocabulary_) / 1000:.2f}K")
+    print(f"Vocab size: {len(vectorizer.get_vocab()) / 1000:.2f}K")
+
+    init = perf_counter()
+    vectorizer.transform(series)
+    transform_time = perf_counter() - init
+    print(f"transform time: {transform_time}")
+    print(f"KDocs per second: {len(series) * 0.001 / transform_time}")
 
 
 if __name__ == "__main__":

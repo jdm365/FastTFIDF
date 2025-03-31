@@ -414,7 +414,6 @@ fn fit_transform(
     let mut idx: usize = 0;
     let mut doc_tokens_hashmap: FxHashMap<u32, u32> = FxHashMap::with_capacity_and_hasher(256, Default::default());
 
-    // text_series.str()?.into_iter().for_each(|v: Option<&str>| {
     text_series.utf8()?.into_iter().for_each(|v: Option<&str>| {
         let _v: &str = match v {
             Some(v) => v,
@@ -479,6 +478,238 @@ fn fit_transform(
     vectorizer.csr_mat.row_start_pos.push(vectorizer.csr_mat.values.len() as u64);
 
     Ok(vectorizer)
+}
+
+
+#[inline]
+fn add_ngrams_range_transform(
+    vectorizer: &TfidfVectorizer<f32>,
+    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
+    ngram_queue: &FiFo,
+    min_size: usize,
+    max_size: usize,
+) {
+    assert!(
+        min_size > 1,
+        "ngram_size must be greater than 1."
+    );
+    assert!(
+        max_size <= 8,
+        "ngram_size must be less than or equal to 8."
+    );
+
+    for ngram_size in min_size..=max_size {
+        let arr = ngram_queue.get_last(ngram_size);
+        if arr.iter().any(|&item| item == std::u32::MAX) {
+            continue;
+        }
+
+        if let Some(&term_id) = vectorizer.vocab.get_ngram_arr(arr) {
+            *doc_tokens_hashmap.entry(term_id).or_insert(0) += 1;
+        }
+    }
+}
+
+#[inline]
+fn process_doc_whitespace_transform(
+    text: &str,
+    vectorizer: &TfidfVectorizer<f32>,
+    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
+    token_buffer: &mut [u8; 4096],
+    lowercase: bool,
+    ngram_range: (usize, usize),
+) {
+    let ngram_width = 1 + (ngram_range.1 - ngram_range.0);
+    let mut ngram_queue: FiFo = FiFo {
+        data: [0; 8],
+        capacity: ngram_width,
+    };
+
+    let mut buffer_idx: usize = 0;
+
+    for &byte in text.as_bytes().iter() {
+        match byte {
+            0..=47 | 58..=64 | 91..=96 | 123..=126 => {
+                if buffer_idx == 0 {
+                    continue;
+                }
+                let token = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
+
+                if let Some(&term_id) = vectorizer.vocab.get(token) {
+                    *doc_tokens_hashmap.entry(term_id).or_insert(0) += 1;
+                    ngram_queue.push(term_id);
+                }
+                buffer_idx = 0;
+                if ngram_range.1 > 1 {
+                    add_ngrams_range_transform(
+                        vectorizer,
+                        doc_tokens_hashmap,
+                        &ngram_queue,
+                        ngram_range.0.max(2),
+                        ngram_range.1,
+                    );
+                }
+            }
+            _ => {
+                token_buffer[buffer_idx] = if lowercase {
+                    byte.to_ascii_lowercase()
+                } else {
+                    byte
+                };
+                if byte < 128 {
+                    buffer_idx += 1;
+                }
+            }
+        }
+    }
+    // Process any token remaining in the buffer.
+    if buffer_idx > 0 {
+        let token = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
+        if let Some(&term_id) = vectorizer.vocab.get(token) {
+            *doc_tokens_hashmap.entry(term_id).or_insert(0) += 1;
+            ngram_queue.push(term_id);
+        }
+        if ngram_range.1 > 1 {
+            add_ngrams_range_transform(
+                vectorizer,
+                doc_tokens_hashmap,
+                &ngram_queue,
+                ngram_range.0.max(2),
+                ngram_range.1,
+            );
+        }
+    }
+}
+
+#[inline]
+fn process_doc_char_transform(
+    text: &str,
+    vectorizer: &TfidfVectorizer<f32>,
+    doc_tokens_hashmap: &mut FxHashMap<u32, u32>,
+    token_buffer: &mut [u8; 4096],
+    lowercase: bool,
+    ngram_range: (usize, usize),
+) {
+    let ngram_width = 1 + (ngram_range.1 - ngram_range.0);
+    let mut ngram_queue: FiFo = FiFo {
+        data: [0; 8],
+        capacity: ngram_width,
+    };
+
+    let mut cntr: usize = ngram_range.0;
+    let mut buffer_idx: usize = 0;
+
+    for &byte in text.as_bytes().iter() {
+        if cntr == 0 {
+            // Time to “flush” the token.
+            cntr = ngram_range.0;
+            if buffer_idx > 0 {
+                let token =
+                    std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
+                if let Some(&term_id) = vectorizer.vocab.get(token) {
+                    *doc_tokens_hashmap.entry(term_id).or_insert(0) += 1;
+                    ngram_queue.push(term_id);
+                }
+                buffer_idx = 0;
+                if ngram_range.1 > 1 {
+                    add_ngrams_range_transform(
+                        vectorizer,
+                        doc_tokens_hashmap,
+                        &ngram_queue,
+                        ngram_range.0.max(2),
+                        ngram_range.1,
+                    );
+                }
+            }
+        }
+        token_buffer[buffer_idx] = if lowercase {
+            byte.to_ascii_lowercase()
+        } else {
+            byte
+        };
+        if byte < 128 {
+            buffer_idx += 1;
+            cntr -= 1;
+        }
+    }
+    if buffer_idx > 0 {
+        let token =
+            std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
+        if let Some(&term_id) = vectorizer.vocab.get(token) {
+            *doc_tokens_hashmap.entry(term_id).or_insert(0) += 1;
+            ngram_queue.push(term_id);
+        }
+        if ngram_range.1 > 1 {
+            add_ngrams_range_transform(
+                vectorizer,
+                doc_tokens_hashmap,
+                &ngram_queue,
+                ngram_range.0.max(2),
+                ngram_range.1,
+            );
+        }
+    }
+}
+
+fn transform(
+    text_series: &Series,
+    vectorizer: &TfidfVectorizer<f32>,
+    lowercase: bool,
+    ngram_range: (usize, usize),
+    whitespace_tokenization: bool,
+) -> Result<CSRMatrix<f32>, PolarsError> {
+    let training_count = vectorizer.csr_mat.row_start_pos.len() - 1;
+
+    let mut csr_mat: CSRMatrix<f32> = CSRMatrix {
+        values: Vec::new(),
+        col_idxs: Vec::new(),
+        row_start_pos: Vec::new(),
+    };
+    csr_mat.row_start_pos.push(0);
+
+    const N: usize = 4096;
+    let mut token_buffer: [u8; N] = [0; N];
+
+    let mut doc_tokens_hashmap: FxHashMap<u32, u32> =
+        FxHashMap::with_capacity_and_hasher(256, Default::default());
+
+    for opt_text in text_series.utf8()?.into_iter() {
+        doc_tokens_hashmap.clear();
+
+        if let Some(text) = opt_text {
+            if whitespace_tokenization {
+                process_doc_whitespace_transform(
+                    text,
+                    vectorizer,
+                    &mut doc_tokens_hashmap,
+                    &mut token_buffer,
+                    lowercase,
+                    ngram_range,
+                );
+            } else {
+                process_doc_char_transform(
+                    text,
+                    vectorizer,
+                    &mut doc_tokens_hashmap,
+                    &mut token_buffer,
+                    lowercase,
+                    ngram_range,
+                );
+            }
+        }
+        for (&term_id, &tf) in doc_tokens_hashmap.iter() {
+            let df = vectorizer
+                .dfs
+                .get(term_id as usize)
+                .copied()
+                .unwrap_or(0);
+            let idf = ((training_count as f32) / (1.0 + df as f32)).ln();
+            csr_mat.values.push(tf as f32 * idf);
+            csr_mat.col_idxs.push(term_id);
+        }
+        csr_mat.row_start_pos.push(csr_mat.values.len() as u64);
+    }
+    Ok(csr_mat)
 }
 
 

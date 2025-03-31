@@ -4,7 +4,15 @@ use numpy::{PyArray1, ToPyArray};
 use pyo3_polars::PySeries;
 use rustc_hash::FxHashMap;
 
-use crate::{TfidfVectorizer, Vocab, CSRMatrix, fit_transform as _fit_transform};
+use std::collections::HashMap;
+use pyo3::types::PyDict; 
+
+use crate::{
+    TfidfVectorizer, 
+    Vocab, CSRMatrix, 
+    fit_transform as _fit_transform,
+    transform as _transform,
+};
 
 
 
@@ -71,6 +79,49 @@ impl PyTfidfVectorizer {
                 format!("Error in fit_transform: {}", e)
             )),
         }
+    }
+
+    #[pyo3(signature = (series, lowercase=true, ngram_range=(1, 1), whitespace_tokenization=true))]
+    fn transform(
+        &self,
+        series: PySeries,
+        lowercase: bool,
+        ngram_range: (usize, usize),
+        whitespace_tokenization: bool,
+        py: Python<'_>,
+    ) -> PyResult<(Py<PyArray1<f32>>, Py<PyArray1<u32>>, Py<PyArray1<u64>>)> {
+        let series: Series = series.into();
+        
+        match _transform(
+            &series,
+            &self.inner,
+            lowercase,
+            ngram_range,
+            whitespace_tokenization,
+        ) {
+            Ok(csr_mat) => {
+                Ok((
+                    csr_mat.values.as_slice().to_pyarray(py).to_owned(),
+                    csr_mat.col_idxs.as_slice().to_pyarray(py).to_owned(),
+                    csr_mat.row_start_pos.as_slice().to_pyarray(py).to_owned()
+                ))
+            },
+            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Error in transform: {}", e)
+            )),
+        }
+    }
+
+    #[pyo3(signature = ())]
+    fn get_vocab(&self) -> PyResult<Py<PyDict>> {
+        Python::with_gil(|py| {
+            let vocab: HashMap<String, u32> = self.inner.vocab.vocab.iter().map(|(k, v)| (k.clone(), *v)).collect();
+            let dict = PyDict::new(py);
+            for (key, value) in vocab.iter() {
+                dict.set_item(key, value)?;
+            }
+            Ok(dict.into_py(py))
+        })
     }
 
     #[pyo3(name = "to_csr")]
