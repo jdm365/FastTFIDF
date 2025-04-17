@@ -1,6 +1,6 @@
 import polars as pl
 from sklearn.feature_extraction.text import TfidfVectorizer
-from time import perf_counter, sleep
+from time import perf_counter
 
 from polars_tfidf import TfidfVectorizer as TfidfVectorizerPolars
 
@@ -12,7 +12,11 @@ def sklearn_bench(df: pl.DataFrame):
 
     series = df.select(column).fill_null("").to_series()
 
-    vectorizer = TfidfVectorizer(ngram_range=(1, 1), analyzer=ANALYZER)
+    vectorizer = TfidfVectorizer(
+            ngram_range=(1, 2), 
+            analyzer=ANALYZER,
+            max_df=0.1,
+            )
 
     init = perf_counter()
     X = vectorizer.fit_transform(series)
@@ -39,7 +43,13 @@ def polars_bench(df: pl.DataFrame):
     vectorizer = TfidfVectorizerPolars()
 
     init = perf_counter()
-    X = vectorizer.fit_transform(series, ngram_range=(1, 1), lowercase=True, whitespace_tokenization=(ANALYZER == "word"))
+    X = vectorizer.fit_transform(
+            series, 
+            ngram_range=(1, 2), 
+            lowercase=True, 
+            whitespace_tokenization=(ANALYZER == "word"),
+            max_df=int(0.1 * len(series)),
+            )
     fit_time = perf_counter() - init
     print(f"fit transform time: {fit_time}")
     print(f"KDocs per second:   {len(series) * 0.001 / fit_time}")
@@ -63,9 +73,10 @@ def polars_bench_df(df: pl.DataFrame):
     X = vectorizer.fit_transform(
             text=df, 
             col_names=columns,
-            ngram_range=(1, 1), 
+            ngram_range=(1, 2), 
             lowercase=True, 
             whitespace_tokenization=(ANALYZER == "word"),
+            max_df=int(0.1 * df.height),
             )
     fit_time = perf_counter() - init
     print(f"fit transform time: {fit_time}")
@@ -85,6 +96,8 @@ if __name__ == "__main__":
     FILENAME = "test_data.parquet"
 
     df = pl.read_parquet(FILENAME)
+    df = pl.concat(20 * [df], how="vertical")
+    print(df.height)
     print(df.columns)
     ## df = pl.DataFrame({
         ## 'name': ["a", "b", "c", "d", "e"],

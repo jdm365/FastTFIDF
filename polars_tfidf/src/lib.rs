@@ -1,5 +1,6 @@
 use rustc_hash::FxHashMap;
 use polars::prelude::*;
+// use rayon::prelude::*;
 
 pub mod bindings;
 
@@ -127,7 +128,11 @@ fn l2_norm(
 
     for row in 0..num_rows {
         let start_idx = row_start_pos[row] as usize;
-        let end_idx = row_start_pos[row + 1] as usize;
+        // let end_idx = row_start_pos[row + 1] as usize;
+        let end_idx = std::cmp::min(
+            row_start_pos[row + 1] as usize,
+            values.len(),
+        );
 
         // Calculate L2 norm for the row
         let mut sum_of_squares: f32 = 0.0;
@@ -779,6 +784,83 @@ fn transform(
     }
     Ok(csr_mat)
 }
+
+/*
+// fn transform_parallel(
+fn transform(
+    text_series: &Series,
+    vectorizer: &TfidfVectorizer<f32>,
+    lowercase: bool,
+    ngram_range: (usize, usize),
+    whitespace_tokenization: bool,
+) -> Result<CSRMatrix<f32>, PolarsError> {
+    let texts: Vec<Option<&str>> = text_series.utf8()?.into_iter().collect();
+    let training_count = vectorizer.csr_mat.row_start_pos.len() - 1;
+    const N: usize = 4096;
+
+    // For each document, build its (values, col_idxs) in parallel
+    let per_doc: Vec<(Vec<f32>, Vec<u32>)> = texts
+        .par_iter()
+        .map(|opt_text| {
+            // local buffers per thread
+            let mut token_buffer = [0u8; N];
+            let mut doc_tokens: FxHashMap<u32, u32> =
+                FxHashMap::with_capacity_and_hasher(256, Default::default());
+
+            if let Some(text) = *opt_text {
+                if whitespace_tokenization {
+                    process_doc_whitespace_transform(
+                        text,
+                        vectorizer,
+                        &mut doc_tokens,
+                        &mut token_buffer,
+                        lowercase,
+                        ngram_range,
+                    );
+                } else {
+                    process_doc_char_transform(
+                        text,
+                        vectorizer,
+                        &mut doc_tokens,
+                        &mut token_buffer,
+                        lowercase,
+                        ngram_range,
+                    );
+                }
+            }
+
+            // turn term‐freq map into tf–idf vectors
+            let mut values = Vec::with_capacity(doc_tokens.len());
+            let mut col_idxs = Vec::with_capacity(doc_tokens.len());
+            for (&term_id, &tf) in doc_tokens.iter() {
+                let df = *vectorizer.dfs.get(term_id as usize).unwrap_or(&0) as f32;
+                let idf = ((training_count as f32) / (1.0 + df)).ln();
+                values.push(tf as f32 * idf);
+                col_idxs.push(term_id);
+            }
+            (values, col_idxs)
+        })
+        .collect();
+
+    // Now flatten into one CSRMatrix
+    let mut csr_mat = CSRMatrix {
+        values: Vec::new(),
+        col_idxs: Vec::new(),
+        row_start_pos: Vec::with_capacity(per_doc.len() + 1),
+    };
+    csr_mat.row_start_pos.push(0);
+
+    for (values, cols) in per_doc {
+        csr_mat.values.extend(values);
+        csr_mat.col_idxs.extend(cols);
+        csr_mat
+            .row_start_pos
+            .push(csr_mat.values.len() as u64);
+    }
+
+    Ok(csr_mat)
+}
+*/
 
 
 #[cfg(test)]
