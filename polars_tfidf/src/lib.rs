@@ -118,6 +118,36 @@ struct CSRMatrix<T> {
     row_start_pos: Vec<u64>,
 }
 
+fn l2_norm(
+    values: &mut Vec<f32>,
+    _: &mut Vec<u32>,
+    row_start_pos: &mut Vec<u64>,
+) {
+    let num_rows = row_start_pos.len() - 1;
+
+    for row in 0..num_rows {
+        let start_idx = row_start_pos[row] as usize;
+        let end_idx = row_start_pos[row + 1] as usize;
+
+        // Calculate L2 norm for the row
+        let mut sum_of_squares: f32 = 0.0;
+        for i in start_idx..end_idx {
+            sum_of_squares += values[i] * values[i];
+        }
+
+        let norm = sum_of_squares.sqrt();
+
+        // Normalize the row
+        if norm > 0.0 {
+            for i in start_idx..end_idx {
+                values[i] /= norm;
+            }
+        }
+    }
+}
+
+
+
 struct TfidfVectorizer<T> {
     vocab: Vocab,
     dfs: Vec<u32>,
@@ -254,6 +284,44 @@ fn process_doc_whitespace_hashmap_queue(
                     buffer_idx += 1;
                 }
             },
+        }
+    }
+
+    if buffer_idx > 0 {
+        let str_ref = std::str::from_utf8(&token_buffer[0..buffer_idx]).unwrap();
+
+        if let Some(&term_id) = vectorizer.vocab.get(str_ref) {
+            match doc_tokens_hashmap.get_mut(&term_id) {
+                Some(item) => *item += 1,
+                None => {
+                    vectorizer.dfs[term_id as usize] += 1;
+                    if vectorizer.dfs[term_id as usize] <= max_df as u32 {
+                        doc_tokens_hashmap.insert(term_id, 1);
+                    }
+
+                    ngram_queue.push(term_id);
+                },
+            }
+        } else {
+            let term_id = vectorizer.vocab.num_tokens as u32;
+
+            vectorizer.vocab.insert(str_ref.to_string(), term_id);
+            doc_tokens_hashmap.insert(term_id, 1);
+            vectorizer.dfs.push(1);
+
+            vectorizer.vocab.num_tokens += 1;
+
+            ngram_queue.push(term_id);
+        }
+
+        if ngram_range.1 > 1 {
+            add_ngrams_range(
+                vectorizer, 
+                doc_tokens_hashmap, 
+                &ngram_queue, 
+                ngram_range.0.max(2),
+                ngram_range.1,
+                );
         }
     }
 
@@ -466,10 +534,10 @@ fn fit_transform(
     vectorizer.csr_mat.values.shrink_to_fit();
     vectorizer.csr_mat.col_idxs.shrink_to_fit();
 
-    let mut last_idx: u32 = 0;
+    let mut prev_idx: u32 = 0;
     for (idx, v) in vectorizer.csr_mat.col_idxs.iter().enumerate() {
-        if *v < last_idx {
-            last_idx = *v;
+        if *v < prev_idx {
+            prev_idx = *v;
             vectorizer.csr_mat.row_start_pos.push(idx as u64);
         }
     }

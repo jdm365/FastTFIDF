@@ -12,8 +12,8 @@ use crate::{
     Vocab, CSRMatrix, 
     fit_transform as _fit_transform,
     transform as _transform,
+    l2_norm,
 };
-
 
 
 #[pyclass(name = "TfidfVectorizer")]
@@ -99,7 +99,12 @@ impl PyTfidfVectorizer {
             ngram_range,
             whitespace_tokenization,
         ) {
-            Ok(csr_mat) => {
+            Ok(mut csr_mat) => {
+                l2_norm(
+                    &mut csr_mat.values,
+                    &mut csr_mat.col_idxs,
+                    &mut csr_mat.row_start_pos,
+                );
                 Ok((
                     csr_mat.values.as_slice().to_pyarray(py).to_owned(),
                     csr_mat.col_idxs.as_slice().to_pyarray(py).to_owned(),
@@ -126,9 +131,14 @@ impl PyTfidfVectorizer {
 
     #[pyo3(name = "to_csr")]
     fn to_csr<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
     ) -> PyResult<(Py<PyArray1<f32>>, Py<PyArray1<u32>>, Py<PyArray1<u64>>)> {
+        l2_norm(
+            &mut self.inner.csr_mat.values,
+            &mut self.inner.csr_mat.col_idxs,
+            &mut self.inner.csr_mat.row_start_pos,
+        );
         Ok((
             self.inner.csr_mat.values.as_slice().to_pyarray(py).to_owned(),
             self.inner.csr_mat.col_idxs.as_slice().to_pyarray(py).to_owned(),
